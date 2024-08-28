@@ -1,0 +1,8 @@
+#ifndef DEFS_H
+#define DEFS_H
+
+#define	DEBUG 0
+#define SDL_AUDIO_BUFFER_SIZE 1024
+#define AVCODEC_MAX_AUDIO_FRAME_SIZE 192000
+
+#endif // DEFS_H
