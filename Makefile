@@ -1,14 +1,15 @@
 player:
 	gcc -o player main.c \
 		util.c \
-		stream.c\
-		convert.c\
-		-lavutil\
-		-lavformat\
-		-lavcodec\
-		-lswscale\
-		-lswresample\
-		-lSDL2\
+		stream.c \
+		queue.c \
+		player.c \
+		-lavutil \
+		-lavformat \
+		-lavcodec \
+		-lswscale \
+		-lswresample \
+		-lSDL2 \
 		-lSDL2_ttf
 
 clean:

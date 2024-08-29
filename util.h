@@ -16,6 +16,8 @@
 #include "defs.h"
 #include "audio.h"
 #include "stream.h"
+#include "player.h"
+#include "queue.h"
 
 int save_frame(
     uint8_t* buf,
@@ -26,23 +28,26 @@ int save_frame(
 );
 
 int decode_video(
-    struct SwsContext* sws_ctx,
     AVCodecContext* ctx,
     AVPacket* packet,
-    AVFrame* frame
+    Queue* videoq
 );
 
 int decode_audio(
     SDL_AudioDeviceID dev,
     AVCodecContext* ctx,
     AVPacket* packet,
-    AVFrame* frame,
     struct SwrContext* swr_ctx
 );
 
 int context_from_file(
     char* path,
     AVFormatContext* ctx
+);
+
+int packet_reader(
+    Player* mediaplayer,
+    struct SwrContext* swr_ctx
 );
 
 #endif

@@ -15,12 +15,14 @@ int save_frame(uint8_t* buf, int linesize, int width, int height, const char* na
 }
 
 int decode_video(
-    struct SwsContext* sws_ctx,
     AVCodecContext* ctx,
     AVPacket* packet,
-    AVFrame* frame
+    Queue* videoq
 ) {
-    //frame->best_effort_timestamp
+    AVFrame* frame = av_frame_alloc();
+    if (!frame) {
+        return -1;
+    }
 
     int ret = avcodec_send_packet(ctx, packet);
     if (ret < 0) {
@@ -34,16 +36,28 @@ int decode_video(
         return ret;
     }
 
-    /* sws_scale(
-        sws_ctx,
-        (uint8_t const* const*)srcFrame->data,
-        srcFrame->linesize, 0,
-        ctx->height,
-        destFrame->data,
-        destFrame->linesize
-    ); */
-
+    queue_put(videoq, TO_VPP(&frame));
     return 0;
+}
+
+int video_thread(Player* mediaplayer) {
+    int ret;
+    AVPacket* pkt;
+
+    while (!mediaplayer->quit_audio_thread) {
+        ret = queue_get(&mediaplayer->videoq_pkts, TO_VPP(&pkt), 1);
+        if (ret < 0) {
+            break;
+        }
+
+        ret = decode_video(
+            mediaplayer->video.ctx, pkt, 
+            &mediaplayer->videoq_frms
+        );
+        if (ret < 0) {
+            continue;
+        }
+    }
 }
 
 int convert_video(
@@ -68,14 +82,19 @@ int decode_audio(
     SDL_AudioDeviceID dev,
     AVCodecContext* ctx,
     AVPacket* packet,
-    AVFrame* frame,
-    struct SwrContext* swr_ctx
+    struct SwrContext* swr_ctx,
+    Queue* audioq
 ) {
     uint8_t *out_buffer = NULL;
 
     int ret = avcodec_send_packet(ctx, packet);
     if (ret < 0) {
         return ret;
+    }
+
+    AVFrame* frame = av_frame_alloc();
+    if (!frame) {
+        return AVERROR(ENOMEM);
     }
 
     AVFrame* audioFrame = av_frame_alloc();
@@ -117,8 +136,7 @@ int decode_audio(
         if (ret < 0) {
             printf(
                 "decode_audio: av_samples_alloc %s (code=%d)\n",
-                av_err2str(ret),
-                ret
+                av_err2str(ret), ret
             );
             break;
         }
@@ -130,9 +148,9 @@ int decode_audio(
             frame->nb_samples
         );
         if (ret < 0) {
-            printf("decode_audio: swr_convert %s (code=%d)\n",
-                av_err2str(ret),
-                ret
+            printf(
+                "decode_audio: swr_convert %s (code=%d)\n",
+                av_err2str(ret), ret
             );
             break;
         }
@@ -146,32 +164,70 @@ int decode_audio(
             1, dst_nb_samples,
             AV_SAMPLE_FMT_S16, 1
         );
-
         if (ret < 0) {
             printf(
-                "decode_audio: av_samples_fill_arrays %s (code=%d)\n",
+                "decode_audio: av_samples_fill_arrays"
+                "%s (code=%d)\n",
                 av_err2str(ret), ret
             );
             break;
         }
 
-        ret = SDL_QueueAudio(
+        queue_put(audioq, TO_VPP(&audioFrame));
+        /* ret = SDL_QueueAudio(
             dev,
             audioFrame->data[0],
             audioFrame->linesize[0]
         );
         if (ret < 0) {
             printf(
-                "decode_audio: SDL_QueueAudio %s (error code=%d)\n",
+                "decode_audio: SDL_QueueAudio "
+                "%s (error code=%d)\n",
                 ret, SDL_GetError()
             );
-        }
+        } */
     }
 
     av_freep(&out_buffer);
-    av_frame_free(&audioFrame);
+    av_frame_free(&frame);
     
     return 0;
+}
+
+int packet_reader(
+    Player* mediaplayer,
+    struct SwrContext* swr_ctx
+) {
+    AVPacket* packet = av_packet_alloc();
+    if (!packet) {
+        printf("packet_decoder: av_packet_alloc ENOMEM\n");
+        return AVERROR(ENOMEM);
+    }
+
+    while (!mediaplayer->quit_decoder) {
+        int error = av_read_frame(mediaplayer->fmt_ctx, packet);
+        if (error == AVERROR_EOF || error == AVERROR(EAGAIN)) {
+            mediaplayer->quit = 1;
+            continue;
+        }
+
+        if (packet->stream_index == mediaplayer->video.index) {
+            /* decode_video(
+                mediaplayer->video.ctx,
+                packet, &mediaplayer->videoq
+            ); */
+            queue_put(&mediaplayer->videoq_pkts, &packet);
+        } else if (packet->stream_index == mediaplayer->audio.index) {
+            /* decode_audio(
+                mediaplayer->audioDev,
+                mediaplayer->audio.ctx,
+                packet, swr_ctx
+            ); */
+            queue_put(&mediaplayer->audioq_pkts, &packet);
+        } else {
+            av_packet_free(&packet);
+        }
+    }
 }
 
 int context_from_file(char* path, AVFormatContext* ctx) {

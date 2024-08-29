@@ -5,7 +5,7 @@
 #include <libavcodec/avcodec.h>
 
 #include "defs.h"
-#include "packet_queue.h"
+#include "queue.h"
 
 void audio_callback(void* userdata, Uint8* stream, int len);
 

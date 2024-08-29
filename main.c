@@ -18,8 +18,10 @@
 // INTERNAL
 #include "defs.h"
 #include "util.h"
+#include "player.h"
 #include "stream.h"
 #include "convert.h"
+#include "queue.h"
 
 const Uint32 MEDIAPLAYER_SDL_FLAGS = \
     SDL_INIT_VIDEO| \
@@ -30,24 +32,6 @@ const Uint32 MEDIAPLAYER_SDL_FLAGS = \
 #define SDL_AUDIO_BUFFER_SIZE 1024
 #define AV_SYNC_THRESHOLD 0.01
 #define AV_NOSYNC_THRESHOLD 10.0
-
-typedef struct Player {
-    int quit;
-    int pause;
-    int skip_video_frame;
-    
-    SDL_Event event;
-    TTF_Font* font;
-    AVFormatContext* fmt_ctx;
-
-    Stream video;
-    double video_clock;
-
-    Stream audio;
-    double audio_clock;
-    SDL_AudioDeviceID audioDev;
-    SDL_AudioSpec audioSpec;
-} Player;
 
 void handle_events(Player* mediaplayer) {
     SDL_Event event;
@@ -143,8 +127,6 @@ int player(
         ret = -1;
         goto free;
     }
-   /*  TTF_SetFontStyle(mediaplayer->font, TTF_STYLE_UNDERLINE); */
-   /*  TTF_SetFontOutline(mediaplayer->font, 1); */
     TTF_SetFontHinting(mediaplayer->font, TTF_HINTING_NORMAL);
 
     window = SDL_CreateWindow(
@@ -216,12 +198,17 @@ int player(
         "Hello World", color
     );
     SDL_Texture* message_texture = SDL_CreateTextureFromSurface(renderer, message);
-    //SDL_FreeSurface(message);
 
     SDL_Rect srcrect = message->clip_rect;
     SDL_Rect dstrect = message->clip_rect;
     dstrect.x = 0;
     dstrect.y = 0;
+    SDL_FreeSurface(message);
+
+    // create thread for packet reading
+    mediaplayer->decoder_id = SDL_CreateThread(packet_reader, "packet_reader", mediaplayer);
+    //mediaplayer->audio_id = SDL_CreateThread(audio_thread, "audio_decoder", mediaplayer);
+    //mediaplayer->audio_id = SDL_CreateThread(audio_thread, "video_thread", mediaplayer);
 
     /*
         -------------
@@ -237,14 +224,13 @@ int player(
             continue;
         }
         
-        error = av_read_frame(mediaplayer->fmt_ctx, packet);
+        /* error = av_read_frame(mediaplayer->fmt_ctx, packet);
         if (error == AVERROR_EOF || error == AVERROR(EAGAIN)) {
             skip_video_frame = 1;
             mediaplayer->quit = 1;
         } else {
             if (packet->stream_index == mediaplayer->video.index) {
                 error = decode_video(
-                    sws_ctx,
                     mediaplayer->video.ctx,
                     packet,
                     mediaplayer->video.frame
@@ -258,11 +244,11 @@ int player(
                     mediaplayer->audioDev,
                     mediaplayer->audio.ctx,
                     packet,
-                    mediaplayer->audio.frame,
                     swr_ctx
                 );
             }
-        }
+        } */
+
 
         SDL_RenderClear(renderer);
         if (!skip_video_frame) {
@@ -271,15 +257,6 @@ int player(
                 mediaplayer->video.frame
             );
         }
-
-        
-
-        /* error = SDL_RenderCopy(
-            renderer,
-            message_texture,
-            NULL, &dstrect
-        ); */
-
         SDL_RenderPresent(renderer);
         
         skip_video_frame = 0;
@@ -301,35 +278,18 @@ int player(
     return ret;
 }
 
-Player* create_player() {
-    Player* mediaplayer = av_mallocz(sizeof(Player));
-    if (!mediaplayer) {
-        return NULL;
-    }
-
-    mediaplayer->quit = 0;
-    mediaplayer->pause = 0;
-    mediaplayer->video.index = -1;
-    mediaplayer->audio.index = -1;
-
-    mediaplayer->fmt_ctx = avformat_alloc_context();
-    if (!mediaplayer->fmt_ctx) {
-        SDL_free(mediaplayer);
-        return NULL;
-    }
-
-    return mediaplayer;
-}
-
 int main(int argc, char** argv) {
+    int error = 0;
     if (argc < 2) {
         printf("Not enough arguments!\n");
         return -1;
     }
-    int error;
 
     Player* mediaplayer = create_player();
-    if (!mediaplayer) goto free;
+    if (!mediaplayer) {
+        error = -1;
+        goto free;
+    }
 
     struct SwsContext* sws_ctx = NULL;
     struct SwrContext* swr_ctx = NULL;
@@ -340,7 +300,12 @@ int main(int argc, char** argv) {
         goto free;
     };
 
-    if (find_streams(mediaplayer->fmt_ctx, &mediaplayer->video, &mediaplayer->audio) < 0) {
+    error = find_streams(
+        mediaplayer->fmt_ctx,
+        &mediaplayer->video,
+        &mediaplayer->audio
+    );
+    if (error < 0) {
         printf("error finding video streams in '%s'\n", filename);
         goto free;
     }
@@ -359,7 +324,7 @@ int main(int argc, char** argv) {
 
     AVPacket* packet = av_packet_alloc();
     if (!packet) {
-        printf("main: av_packet_alloc \n");
+        printf("main: av_packet_alloc ENOMEM \n");
         error = -1;
         goto free;
     }
@@ -409,7 +374,6 @@ int main(int argc, char** argv) {
         sws_ctx, swr_ctx,
         packet
     );
-
     if (error < 0) {
         error = -1;
     } else {
@@ -418,8 +382,9 @@ int main(int argc, char** argv) {
 
     free:
     if (packet) av_packet_free(&packet);
-    if (mediaplayer->fmt_ctx)
+    if (mediaplayer->fmt_ctx) {
         avformat_free_context(mediaplayer->fmt_ctx);
+    }
     if (mediaplayer) SDL_free(mediaplayer);
     free_stream(&mediaplayer->video);
     free_stream(&mediaplayer->audio);
