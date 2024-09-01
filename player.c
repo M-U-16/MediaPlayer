@@ -10,8 +10,7 @@ Player* create_player() {
     mediaplayer->pause = 0;
     mediaplayer->video.index = -1;
     mediaplayer->audio.index = -1;
-    mediaplayer->pause_audio_thread = 0;
-    mediaplayer->pause_audio_thread = 0;
+    mediaplayer->refresh_video = 0;
     mediaplayer->quit_audio_thread = 0;
     mediaplayer->quit_video_thread = 0;
 

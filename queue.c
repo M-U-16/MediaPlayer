@@ -1,21 +1,26 @@
 #include "queue.h"
 
-extern int quit;
-
 void queue_free(Queue* q) {
     Node* current_node = q->head;
     Node* prev_node;
 
     while (current_node) {
-        av_free(current_node->data);
+        if (q->data_type == QUEUE_FRAME) {
+            av_frame_free((AVFrame**)&current_node->data);
+        } else if (q->data_type == QUEUE_PACKET) {
+            av_packet_free((AVPacket**)&current_node->data);
+        }
         prev_node = current_node;
         current_node = current_node->next;
         av_free(prev_node);
     }
 }
 
-int queue_init(Queue *q, enum queue_data queue_type) {
-    memset(q, 0, sizeof(Queue));
+int queue_length(Queue* q) {
+    return q->length;
+}
+
+int queue_init(Queue *q, enum queue_data queue_type, int* exit, char* name, int max_length) {
     q->mutex = SDL_CreateMutex();
     if (!q->mutex) {
         printf("queue_init: SDL_CreateMutex %s\n", SDL_GetError());
@@ -29,19 +34,40 @@ int queue_init(Queue *q, enum queue_data queue_type) {
     }
 
     q->data_type = queue_type;
+    q->exit = exit;
+    q->length = 0;
+    q->head = NULL;
+    q->tail = NULL;
+    q->max_length = max_length;
+
+    strncpy(q->name, name, 6);
 }
 
 int queue_put(Queue *q, void** data) {
+
+    int ret;
+    SDL_LockMutex(q->mutex);
+    if (q->length >= q->max_length) {
+        SDL_UnlockMutex(q->mutex);
+        if (q->data_type == QUEUE_FRAME) {
+            AVFrame** frame = (AVFrame**)data;
+    	    av_frame_free(frame);
+        } else if (q->data_type == QUEUE_PACKET) {
+            AVPacket** packet = (AVPacket**)data;
+            av_packet_free(packet);
+        }
+        return -1;
+    }
+    
     Node* node = av_mallocz(sizeof(Node));
     if (!node) {
-        return -1;
+        ret = -1;
+        goto exit;
     }
 
     node->data = *data;
     node->next = NULL;
     *data = NULL;
-
-    SDL_LockMutex(q->mutex);
 
     if (!q->tail) {
         q->head = node;
@@ -49,29 +75,33 @@ int queue_put(Queue *q, void** data) {
         q->tail->next = node;
     }
     q->tail = node;
-
     q->length++;
-    if (q->data_type == QUEUE_FRAME) {
-        AVFrame* data = (AVFrame*)node->data;
-        q->size += data->pkt_size;
-    } else if (q->data_type == QUEUE_PACKET) {
-        AVPacket* packet = (AVPacket*)node->data;
-        q->size += packet->size;
-    }
 
     SDL_CondSignal(q->cond);
     SDL_UnlockMutex(q->mutex);
 
-    return 0;
+    exit:
+    if (DEBUG) {
+        printf(
+            "queue_get: type=%s, name=%s, len=%d\n",
+            q->data_type == QUEUE_FRAME ? "frame" : "packet",
+            q->name, q->length
+        );
+    }
+    return ret;
 }
 
 int queue_get(Queue *q, void** data, int block) {
+
     int ret;
     Node *pkt1;
 
-    SDL_LockMutex(q->mutex);
+    if (SDL_LockMutex(q->mutex) < 0) {
+        printf("queue_get: SDL_LockMutex -1\n");
+        return -1;
+    }
     for (;;) {
-        if (quit) {
+        if (*q->exit) {
             ret = -1;
             break;
         }
@@ -79,7 +109,7 @@ int queue_get(Queue *q, void** data, int block) {
         pkt1 = q->head;
         if (!pkt1) {
             if (!block) {
-                ret = 0;
+                ret = 1;
                 break;
             }
 
@@ -93,19 +123,19 @@ int queue_get(Queue *q, void** data, int block) {
         }
 
         q->length--;
-        if (q->data_type == QUEUE_FRAME) {
-            AVFrame* data = (AVFrame*)pkt1->data;
-            q->size -= data->pkt_size;
-        } else if (q->data_type == QUEUE_PACKET) {
-            AVPacket* packet = (AVPacket*)pkt1->data;
-            q->size -= packet->size;
-        }
-
         *data = pkt1->data;
         av_free(pkt1);
-        ret = 1;
+        ret = 0;
         break;
     }
+
     SDL_UnlockMutex(q->mutex);
+    if (DEBUG) {
+        printf(
+            "queue_get: type=%s, name=%s, len=%d\n",
+            q->data_type == QUEUE_FRAME ? "frame" : "packet",
+            q->name, q->length
+        );
+    }
     return ret;
 }

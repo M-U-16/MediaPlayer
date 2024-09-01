@@ -4,6 +4,8 @@
 #include <SDL2/SDL.h>
 #include <libavcodec/avcodec.h>
 
+#include "defs.h"
+
 #define TO_VPP(var) ((void**)var)
 
 typedef struct Node {
@@ -16,6 +18,9 @@ typedef struct {
 
     int length;
     int size;
+    int max_length;
+    int* exit;
+    char name[6];
 
     SDL_mutex* mutex;
     SDL_cond* cond;
@@ -27,8 +32,13 @@ typedef struct {
 } Queue;
 
 void queue_free(Queue* q);
+int queue_length(Queue* q);
 int queue_put(Queue *q, void** data);
-int queue_init(Queue *q, enum queue_data queue_type);
+int queue_init(
+    Queue *q,
+    enum queue_data queue_type,
+    int* exit, char* name, int max_length
+);
 int queue_get(Queue *q, void** data, int block);
 
 #endif // FRAME_QUEUE_H

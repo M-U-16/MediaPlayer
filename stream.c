@@ -45,11 +45,11 @@ int init_stream(Stream* stream) {
         goto exit_error;
     }
 
-    stream->frame = av_frame_alloc();
+    /* stream->frame = av_frame_alloc();
     if (!stream->frame) {
         printf("init_stream: %s\n", av_err2str(AVERROR(ENOMEM)));
         goto exit_error;
-    }
+    } */
     
     stream->ctx = avcodec_alloc_context3(stream->codec);
     if (!stream->ctx) {
@@ -88,7 +88,7 @@ void free_stream(Stream* stream) {
     if (stream->params) {
         avcodec_parameters_free(&stream->params);
     }
-    if (stream->frame) {
+    /* if (stream->frame) {
         av_frame_free(&stream->frame);
-    }
+    } */
 }

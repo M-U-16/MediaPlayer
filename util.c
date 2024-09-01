@@ -14,197 +14,16 @@ int save_frame(uint8_t* buf, int linesize, int width, int height, const char* na
     fclose(file);
 }
 
-int decode_video(
-    AVCodecContext* ctx,
-    AVPacket* packet,
-    Queue* videoq
-) {
-    AVFrame* frame = av_frame_alloc();
-    if (!frame) {
-        return -1;
-    }
+int packet_reader(void* data) {
+    Player* mediaplayer = (Player*)data;
 
-    int ret = avcodec_send_packet(ctx, packet);
-    if (ret < 0) {
-        return ret;
-    }
-
-    ret = avcodec_receive_frame(ctx, frame);
-    if (ret == AVERROR_EOF) {
-        return AVERROR_EOF;
-    } else if (ret < 0) {
-        return ret;
-    }
-
-    queue_put(videoq, TO_VPP(&frame));
-    return 0;
-}
-
-int video_thread(Player* mediaplayer) {
-    int ret;
-    AVPacket* pkt;
-
-    while (!mediaplayer->quit_audio_thread) {
-        ret = queue_get(&mediaplayer->videoq_pkts, TO_VPP(&pkt), 1);
-        if (ret < 0) {
-            break;
-        }
-
-        ret = decode_video(
-            mediaplayer->video.ctx, pkt, 
-            &mediaplayer->videoq_frms
-        );
-        if (ret < 0) {
+    while (!mediaplayer->quit_reader && !mediaplayer->quit) {
+        AVPacket* packet = av_packet_alloc();
+        if (!packet) {
+            printf("packet_reader: av_packet_alloc ENOMEM\n");
             continue;
         }
-    }
-}
 
-int convert_video(
-    AVFrame* src,
-    AVFrame* dst,
-    AVCodecContext* ctx,
-    struct SwsContext* sws_ctx
-) {
-    sws_scale(
-        sws_ctx,
-        (uint8_t const* const*)src->data,
-        src->linesize, 0,
-        ctx->height,
-        dst->data,
-        dst->linesize
-    );
-
-    return 0;
-}
-
-int decode_audio(
-    SDL_AudioDeviceID dev,
-    AVCodecContext* ctx,
-    AVPacket* packet,
-    struct SwrContext* swr_ctx,
-    Queue* audioq
-) {
-    uint8_t *out_buffer = NULL;
-
-    int ret = avcodec_send_packet(ctx, packet);
-    if (ret < 0) {
-        return ret;
-    }
-
-    AVFrame* frame = av_frame_alloc();
-    if (!frame) {
-        return AVERROR(ENOMEM);
-    }
-
-    AVFrame* audioFrame = av_frame_alloc();
-    if (!audioFrame) {
-        return AVERROR(ENOMEM);
-    }
-
-    int out_linesize;
-    int dst_nb_samples;
-    int src_sample_fmt = ctx->sample_fmt;
-    int src_num_channels = ctx->ch_layout.nb_channels;
-
-    while (ret >= 0) {
-        ret = avcodec_receive_frame(ctx, frame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-            break;
-        }
-        if (ret < 0) {
-            return ret;
-        }
-
-        /*
-        Following code is based on this answer from Stackoverflow:
-        https://stackoverflow.com/a/69334911
-        */
-        ret = av_rescale_rnd(
-            swr_get_delay(swr_ctx, frame->sample_rate) + frame->nb_samples,
-            frame->sample_rate,
-            frame->sample_rate,
-            AV_ROUND_UP
-        );
-        dst_nb_samples = frame->ch_layout.nb_channels * ret;
-
-        ret = av_samples_alloc(
-            &out_buffer, NULL, 1,
-            dst_nb_samples,
-            AV_SAMPLE_FMT_S16, 1
-        );
-        if (ret < 0) {
-            printf(
-                "decode_audio: av_samples_alloc %s (code=%d)\n",
-                av_err2str(ret), ret
-            );
-            break;
-        }
-
-        ret = swr_convert(
-            swr_ctx, &out_buffer,
-            dst_nb_samples,
-            (const uint8_t**)frame->data,
-            frame->nb_samples
-        );
-        if (ret < 0) {
-            printf(
-                "decode_audio: swr_convert %s (code=%d)\n",
-                av_err2str(ret), ret
-            );
-            break;
-        }
-
-        dst_nb_samples = frame->ch_layout.nb_channels * ret;
-
-        ret = av_samples_fill_arrays(
-            audioFrame->data,
-            audioFrame->linesize,
-            out_buffer,
-            1, dst_nb_samples,
-            AV_SAMPLE_FMT_S16, 1
-        );
-        if (ret < 0) {
-            printf(
-                "decode_audio: av_samples_fill_arrays"
-                "%s (code=%d)\n",
-                av_err2str(ret), ret
-            );
-            break;
-        }
-
-        queue_put(audioq, TO_VPP(&audioFrame));
-        /* ret = SDL_QueueAudio(
-            dev,
-            audioFrame->data[0],
-            audioFrame->linesize[0]
-        );
-        if (ret < 0) {
-            printf(
-                "decode_audio: SDL_QueueAudio "
-                "%s (error code=%d)\n",
-                ret, SDL_GetError()
-            );
-        } */
-    }
-
-    av_freep(&out_buffer);
-    av_frame_free(&frame);
-    
-    return 0;
-}
-
-int packet_reader(
-    Player* mediaplayer,
-    struct SwrContext* swr_ctx
-) {
-    AVPacket* packet = av_packet_alloc();
-    if (!packet) {
-        printf("packet_decoder: av_packet_alloc ENOMEM\n");
-        return AVERROR(ENOMEM);
-    }
-
-    while (!mediaplayer->quit_decoder) {
         int error = av_read_frame(mediaplayer->fmt_ctx, packet);
         if (error == AVERROR_EOF || error == AVERROR(EAGAIN)) {
             mediaplayer->quit = 1;
@@ -212,22 +31,17 @@ int packet_reader(
         }
 
         if (packet->stream_index == mediaplayer->video.index) {
-            /* decode_video(
-                mediaplayer->video.ctx,
-                packet, &mediaplayer->videoq
-            ); */
-            queue_put(&mediaplayer->videoq_pkts, &packet);
-        } else if (packet->stream_index == mediaplayer->audio.index) {
-            /* decode_audio(
-                mediaplayer->audioDev,
-                mediaplayer->audio.ctx,
-                packet, swr_ctx
-            ); */
-            queue_put(&mediaplayer->audioq_pkts, &packet);
+            //SDL_CondSignal();
+            queue_put(&mediaplayer->videoq_pkts, TO_VPP(&packet));
+        }/*  else if (packet->stream_index == mediaplayer->audio.index) {
+            //queue_put(&mediaplayer->audioq_pkts, TO_VPP(&packet));
+            av_packet_unref(packet);
         } else {
-            av_packet_free(&packet);
-        }
+            av_packet_unref(packet);
+        } */
     }
+
+    return 0;
 }
 
 int context_from_file(char* path, AVFormatContext* ctx) {

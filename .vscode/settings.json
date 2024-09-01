@@ -105,6 +105,8 @@
         "player.h": "c",
         "frame_queue.h": "c",
         "*.ipp": "c",
-        "queue.h": "c"
+        "queue.h": "c",
+        "fifo.h": "c",
+        "decoder.h": "c"
     }
 }

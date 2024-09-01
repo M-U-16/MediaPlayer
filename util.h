@@ -27,27 +27,11 @@ int save_frame(
     const char* name
 );
 
-int decode_video(
-    AVCodecContext* ctx,
-    AVPacket* packet,
-    Queue* videoq
-);
-
-int decode_audio(
-    SDL_AudioDeviceID dev,
-    AVCodecContext* ctx,
-    AVPacket* packet,
-    struct SwrContext* swr_ctx
-);
-
 int context_from_file(
     char* path,
     AVFormatContext* ctx
 );
 
-int packet_reader(
-    Player* mediaplayer,
-    struct SwrContext* swr_ctx
-);
+int packet_reader(void* data);
 
 #endif

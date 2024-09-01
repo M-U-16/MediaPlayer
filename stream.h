@@ -6,7 +6,7 @@
 
 typedef struct Stream {
     AVCodecContext* ctx;
-    AVFrame* frame;
+    /* AVFrame* frame; */
     AVCodec* codec;
     AVCodecParameters* params;
     int index;
