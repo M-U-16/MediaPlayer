@@ -2,6 +2,7 @@
 #define DECODER_H
 
 #include "video.h"
+#include "queue.h"
 #include "audio.h"
 #include "player.h"
 

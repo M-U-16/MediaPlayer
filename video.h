@@ -27,6 +27,5 @@ int update_video(
 );
 
 int video_thread(void* data);
-int video_refresh_thread(void* data);
 
 #endif // VIDEO_H

@@ -6,7 +6,6 @@
 
 typedef struct Stream {
     AVCodecContext* ctx;
-    /* AVFrame* frame; */
     AVCodec* codec;
     AVCodecParameters* params;
     int index;
@@ -16,7 +15,7 @@ typedef struct Stream {
 int init_stream(Stream* stream);
 void free_stream(Stream* stream);
 int find_streams(
-    AVFormatContext* src ,
+    AVFormatContext* src,
     Stream* video,
     Stream* audio
 );

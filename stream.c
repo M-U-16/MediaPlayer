@@ -15,13 +15,13 @@ int find_streams(
             continue;
         }
 
-        if (localCodecParams->codec_type == AVMEDIA_TYPE_VIDEO) {
+        if (localCodecParams->codec_type == AVMEDIA_TYPE_VIDEO && video) {
             if (video->index == -1) {
                 video->index = i;
                 video->codec = (AVCodec*)localCodec;
                 video->params = localCodecParams;
             }
-        } else if (localCodecParams->codec_type == AVMEDIA_TYPE_AUDIO) {
+        } else if (localCodecParams->codec_type == AVMEDIA_TYPE_AUDIO && audio) {
             if (audio->index == -1) {
                 audio->index = i;
                 audio->codec = (AVCodec*)localCodec;
@@ -44,12 +44,6 @@ int init_stream(Stream* stream) {
         printf("init_steam: no stream params supplied\n");
         goto exit_error;
     }
-
-    /* stream->frame = av_frame_alloc();
-    if (!stream->frame) {
-        printf("init_stream: %s\n", av_err2str(AVERROR(ENOMEM)));
-        goto exit_error;
-    } */
     
     stream->ctx = avcodec_alloc_context3(stream->codec);
     if (!stream->ctx) {
@@ -88,7 +82,4 @@ void free_stream(Stream* stream) {
     if (stream->params) {
         avcodec_parameters_free(&stream->params);
     }
-    /* if (stream->frame) {
-        av_frame_free(&stream->frame);
-    } */
 }

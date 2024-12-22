@@ -14,6 +14,8 @@ int decode_video(
     if (ret < 0) {
         return ret;
     }
+    printf("decode_video: packet->duration=%d\n", packet->duration);
+    printf("decode_video: packet->size=%d\n", packet->size);
 
     ret = avcodec_receive_frame(ctx, frame);
     if (ret == AVERROR_EOF) {
@@ -26,7 +28,7 @@ int decode_video(
     return 0;
 }
 
-int video_refresh_thread(void* data) {
+int video_thread(void* data) {
     int ret;
     AVFrame* frame;
     Player* mediaplayer = (Player*)data;
@@ -38,15 +40,17 @@ int video_refresh_thread(void* data) {
                 continue;
             }
             
+            SDL_LockMutex(mediaplayer->texture_mx);
             update_video(
                 mediaplayer->renderer,
                 mediaplayer->texture,
                 frame
             );
+            SDL_UnlockMutex(mediaplayer->texture_mx);
             av_frame_free(&frame);
             SDL_RenderPresent(mediaplayer->renderer);
         }
-        SDL_Delay(20);
+        SDL_Delay(30);
     }
 
     return 0;
@@ -67,6 +71,7 @@ int update_video(
         frame->linesize[2]
     );
     SDL_RenderCopy(renderer, texture, NULL, NULL);
+    return 0;
 }
 
 int convert_video(
@@ -85,4 +90,18 @@ int convert_video(
     );
 
     return 0;
+}
+
+double synchronize_video(Player* mediaplayer, AVFrame* frame, double pts) {
+    double frame_delay;
+    if (pts != 0) {
+        mediaplayer->video_clock = pts;
+    } else {
+        pts = mediaplayer->video_clock;
+    }
+
+    frame_delay = av_q2d(mediaplayer->video.ctx->time_base);
+    frame_delay += frame->repeat_pict * (frame_delay * 0.5);
+    mediaplayer->video_clock += frame_delay;
+    return pts;
 }

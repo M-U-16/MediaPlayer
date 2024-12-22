@@ -107,6 +107,9 @@
         "*.ipp": "c",
         "queue.h": "c",
         "fifo.h": "c",
-        "decoder.h": "c"
+        "decoder.h": "c",
+        "avutil.h": "c",
+        "sdl_audio.h": "c",
+        "sdl_stdinc.h": "c"
     }
 }

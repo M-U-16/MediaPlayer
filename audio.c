@@ -1,13 +1,62 @@
 #include "audio.h"
 
-int audio_thread(void* data) {
-    Player* mediaplayer = (Player*)data;
+void audio_callback(void* opaque, Uint8* stream, int len) {
+    static int first_run = 1;
+    Player* mediaplayer = (Player*)opaque;
+    
+    //SDL_MixAudioFormat();
+    //static uint8_t audio_buf[(AVCODEC_MAX_AUDIO_FRAME_SIZE*3)/2];
+
+    AVFrame* frame;
+    queue_get(&mediaplayer->audioq_frms, TO_VPP(&frame), 0);
+    if (first_run) {
+        //printf("audio_callback: frame->sample_rate=%d\n", frame->sample_rate);
+        first_run = 0;
+    }
+    
+    av_frame_free(&frame);
+    memset(stream, 0, len);
+    
+    //printf("audio_callback: len=%d\n", len);
 }
 
-int open_audio_dev(
+int audio_thread(void* data) {
+    int ret = 0;
+    AVFrame* frame;
+    Player* mediaplayer = (Player*)data;
+
+    while (!mediaplayer->quit) {
+        if (!mediaplayer->pause) {
+            ret = queue_get(
+                &mediaplayer->audioq_frms,
+                TO_VPP(&frame), 1
+            );
+            if (ret != 0) {
+                continue;
+            }
+            
+            ret = SDL_QueueAudio(
+                mediaplayer->audioDev,
+                frame->data[0],
+                frame->linesize[0]
+            );
+            if (ret < 0) {
+                printf(
+                    "audio_thread: SDL_QueueAudio %s\n",SDL_GetError());
+            }
+            av_frame_free(&frame);
+        }
+    }
+
+    return 0;
+}
+
+int audio_open_dev(
     Stream* audio,
     SDL_AudioSpec* spec,
-    SDL_AudioDeviceID* dev
+    SDL_AudioDeviceID* dev,
+    void* userdata,
+    void (*func)(void*, Uint8*, int)
 ) {
     SDL_AudioSpec wanted_audioSpec;
     SDL_zero(wanted_audioSpec);
@@ -15,7 +64,12 @@ int open_audio_dev(
     wanted_audioSpec.freq = audio->ctx->sample_rate;
     wanted_audioSpec.channels = audio->codec->ch_layouts->nb_channels;
     wanted_audioSpec.format = AUDIO_S32SYS;
-    wanted_audioSpec.silence = 0;
+    wanted_audioSpec.samples = PLAYER_AUDIO_BUFFER_SIZE;
+    if (PLAYER_USE_AUDIO_CALLBACK) {
+        wanted_audioSpec.callback = func;
+        wanted_audioSpec.userdata = userdata;
+    }
+    //av_log2()
     
     *dev = SDL_OpenAudioDevice(
         NULL, SDL_FALSE,
@@ -30,17 +84,18 @@ int open_audio_dev(
     return 0;
 }
 
-void close_audio_dev(SDL_AudioDeviceID dev) {
+void audio_close_dev(SDL_AudioDeviceID dev) {
     SDL_PauseAudioDevice(dev, SDL_TRUE);
     SDL_ClearQueuedAudio(dev);
     SDL_CloseAudioDevice(dev);
 }
 
-int resample_audio(
+int audio_resample(
     struct SwrContext* swr_ctx,
     AVFrame* inFrame,
     AVFrame* outFrame
 ) {
+    int ret;
     int out_linesize;
     int dst_nb_samples;
     uint8_t *out_buffer = NULL;
@@ -49,7 +104,7 @@ int resample_audio(
     Following code is based on this answer from Stackoverflow:
     https://stackoverflow.com/a/69334911
     */
-    int ret = av_rescale_rnd(
+    ret = av_rescale_rnd(
         swr_get_delay(swr_ctx, inFrame->sample_rate)
         + inFrame->nb_samples,
         inFrame->sample_rate,
@@ -96,8 +151,7 @@ int resample_audio(
     );
     if (ret < 0) {
         printf(
-            "decode_audio: av_samples_fill_arrays"
-            "%s (code=%d)\n",
+            "decode_audio: av_samples_fill_arrays %s (code=%d)\n",
             av_err2str(ret), ret
         );
         av_freep(&out_buffer);
@@ -108,60 +162,41 @@ int resample_audio(
     return 0;
 }
 
-int decode_audio(
+int audio_decode(
     struct SwrContext* swr_ctx,
     AVCodecContext* ctx,
     AVPacket* packet,
     Queue* audioq
 ) {
-    int ret = avcodec_send_packet(ctx, packet);
-    if (ret < 0) {
-        return ret;
-    }
-
     AVFrame* frame = av_frame_alloc();
     if (!frame) {
         return AVERROR(ENOMEM);
     }
 
-    AVFrame* audioFrame = av_frame_alloc();
-    if (!audioFrame) {
-        av_frame_free(&frame);
-        return AVERROR(ENOMEM);
+    int ret = avcodec_send_packet(ctx, packet);
+    if (ret < 0) {
+        return ret;
     }
 
     while (ret >= 0) {
         ret = avcodec_receive_frame(ctx, frame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+        if (ret < 0) {
             break;
         }
-        if (ret < 0) {
-            return ret;
+
+        AVFrame* audioFrame = av_frame_alloc();
+        if (!audioFrame) {
+            ret = AVERROR(ENOMEM);
+            break;
         }
 
-        resample_audio(swr_ctx, frame, audioFrame);
+        audio_resample(swr_ctx, frame, audioFrame);
         queue_put(audioq, TO_VPP(&audioFrame));
-        
-        /* ret = SDL_QueueAudio(dev,
-            audioFrame->data[0],
-            audioFrame->linesize[0]
-        );
-        if (ret < 0) {
-            printf(
-                "decode_audio: SDL_QueueAudio %s (error code=%d)\n",
-                ret, SDL_GetError()
-            );
-        } */
     }
     if (ret >= 0) {
         ret = 0;
     }
 
-    if (frame) {
-        av_frame_free(&frame);
-    }
-    if (audioFrame) {
-        av_frame_free(&audioFrame);
-    }
+    av_frame_free(&frame);
     return ret;
 }
