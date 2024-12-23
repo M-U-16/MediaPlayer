@@ -14,8 +14,8 @@ int decode_video(
     if (ret < 0) {
         return ret;
     }
-    printf("decode_video: packet->duration=%d\n", packet->duration);
-    printf("decode_video: packet->size=%d\n", packet->size);
+    //printf("decode_video: packet->duration=%d\n", packet->duration);
+    //printf("decode_video: packet->size=%d\n", packet->size);
 
     ret = avcodec_receive_frame(ctx, frame);
     if (ret == AVERROR_EOF) {
@@ -23,6 +23,8 @@ int decode_video(
     } else if (ret < 0) {
         return ret;
     }
+
+    
 
     queue_put(videoq, TO_VPP(&frame));
     return 0;

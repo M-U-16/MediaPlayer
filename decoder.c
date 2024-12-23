@@ -10,7 +10,7 @@ int packet_decoder(void* data) {
         mediaplayer->audioq_frms.max_length != 0 ||
         mediaplayer->videoq_frms.length >= mediaplayer->videoq_frms.max_length &&
         mediaplayer->videoq_frms.max_length != 0) {
-            SDL_Delay(10);
+            SDL_Delay(1);
             continue;
         }
 

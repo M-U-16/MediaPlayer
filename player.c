@@ -234,6 +234,12 @@ int player_start(Player* mediaplayer) {
     SDL EVENTLOOP
     -------------
     */
+
+    SDL_PauseAudioDevice(
+        mediaplayer->audioDev,
+        SDL_FALSE
+    );
+    
     SDL_Event event;
     while (!mediaplayer->quit) {
         while(SDL_PollEvent(&event)) {
@@ -282,8 +288,6 @@ int player_start(Player* mediaplayer) {
     if (threads.decoder_th) { SDL_WaitThread(threads.decoder_th, NULL); }
     if (threads.reader_th) { SDL_WaitThread(threads.reader_th, NULL); }
 
-    /* SDL_FreeSurface(message);
-    SDL_DestroyTexture(message_texture); */
     if (SDL_WasInit(MEDIAPLAYER_SDL_FLAGS)) { SDL_Quit(); }
     if (TTF_WasInit()) { TTF_Quit(); }
 

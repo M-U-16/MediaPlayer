@@ -4,20 +4,13 @@ void audio_callback(void* opaque, Uint8* stream, int len) {
     static int first_run = 1;
     Player* mediaplayer = (Player*)opaque;
     
-    //SDL_MixAudioFormat();
-    //static uint8_t audio_buf[(AVCODEC_MAX_AUDIO_FRAME_SIZE*3)/2];
-
     AVFrame* frame;
-    queue_get(&mediaplayer->audioq_frms, TO_VPP(&frame), 0);
-    if (first_run) {
-        //printf("audio_callback: frame->sample_rate=%d\n", frame->sample_rate);
-        first_run = 0;
+    if (queue_get(&mediaplayer->audioq_frms, TO_VPP(&frame), 0)) {
+        SDL_memset(stream, mediaplayer->audioSpec.silence, len);
+    } else {
+        SDL_memcpy(stream, frame->data[0], len);
+        av_frame_free(&frame);
     }
-    
-    av_frame_free(&frame);
-    memset(stream, 0, len);
-    
-    //printf("audio_callback: len=%d\n", len);
 }
 
 int audio_thread(void* data) {
@@ -42,7 +35,8 @@ int audio_thread(void* data) {
             );
             if (ret < 0) {
                 printf(
-                    "audio_thread: SDL_QueueAudio %s\n",SDL_GetError());
+                    "audio_thread: SDL_QueueAudio %s\n",SDL_GetError()
+                );
             }
             av_frame_free(&frame);
         }
@@ -69,7 +63,6 @@ int audio_open_dev(
         wanted_audioSpec.callback = func;
         wanted_audioSpec.userdata = userdata;
     }
-    //av_log2()
     
     *dev = SDL_OpenAudioDevice(
         NULL, SDL_FALSE,
@@ -191,6 +184,7 @@ int audio_decode(
         }
 
         audio_resample(swr_ctx, frame, audioFrame);
+        /* audioFrame->best_effort_timestamp */
         queue_put(audioq, TO_VPP(&audioFrame));
     }
     if (ret >= 0) {

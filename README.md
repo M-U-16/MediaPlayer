@@ -5,7 +5,7 @@
 ## Ziel von diesem Projekt
 Dies ist ein persönliches Projekt
 von mir, um ein Verständnis für die Arbeit mit verschiedenen Medien
-zu entwickeln. Es basiert auf dem ["How to Write a Video Player in Less Than 1000 Lines"](http://www.dranger.com/ffmpeg/) Tutorial von Stephen Dranger. Da das Tutorial doch sehr veraltetet ist (Februar 2015) und in dem Tutorial SDL Version 1 verwendet wird und ich Version 2 verwende, gab es, durch den Unterschied in den Versionen von SDL und FFMPEG, verschiedene Hirden. Dadurch wurde ein reines Copy and Paste, glücklicher Weise, nicht möglich und hat mich veranlasst selber Lösungen zu finden.
+zu entwickeln. Es basiert auf dem ["How to Write a Video Player in Less Than 1000 Lines"](http://www.dranger.com/ffmpeg/) Tutorial von Stephen Dranger. Da das Tutorial doch sehr veraltetet ist (Februar 2015) und in dem Tutorial SDL Version 1 verwendet wird und ich Version 2 verwende, gab es, durch den Unterschied in den Versionen von SDL und FFMPEG, verschiedene Hirden. Dadurch wurde ein reines Copy and Paste, glücklicher Weise, nicht möglich und hat mich veranlasst selber Lösungen für verschiedene Probleme zu finden.
 
 ## Todos
 - [x] Lesen von Audio- und Videospuren
